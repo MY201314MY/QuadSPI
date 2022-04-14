@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <stdint.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -56,9 +57,205 @@ static void MX_QUADSPI_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+uint8_t buf[4] = {0};
+
 int __io_putchar(int ch) {
     ITM_SendChar(ch);
     return ch;
+}
+
+int W25QxxReadFlashID()
+{
+	QSPI_CommandTypeDef     sCommand;
+
+	/* Enable write operations ------------------------------------------ */
+	sCommand.InstructionMode   = QSPI_INSTRUCTION_1_LINE;
+	sCommand.Instruction       = 0x90;
+
+	sCommand.AddressMode = QSPI_ADDRESS_1_LINE;
+	sCommand.AddressSize = QSPI_ADDRESS_24_BITS;
+	sCommand.Address = 0x0U;
+
+	sCommand.AlternateByteMode = QSPI_ALTERNATE_BYTES_NONE;
+	sCommand.AlternateBytes = QSPI_ALTERNATE_BYTES_NONE;
+	sCommand.AlternateBytesSize = QSPI_ALTERNATE_BYTES_NONE;
+
+	sCommand.DummyCycles = 0;
+	sCommand.DataMode = QSPI_DATA_1_LINE;
+	sCommand.NbData = 2;
+
+	sCommand.DdrMode           = QSPI_DDR_MODE_DISABLE;
+	sCommand.SIOOMode          = QSPI_SIOO_INST_EVERY_CMD;
+
+	if (HAL_QSPI_Command(&hqspi, &sCommand, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
+	{
+	  Error_Handler();
+	}
+
+	if (HAL_QSPI_Receive(&hqspi, buf, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK) {
+	  Error_Handler();
+	}
+
+
+	return 0;
+}
+
+typedef enum {
+	Register_1,
+	Register_2
+} RegisterIndex;
+
+int W25QxxReadStatus(RegisterIndex index, uint8_t *value)
+{
+	QSPI_CommandTypeDef sCommand = {0};
+
+	/* Enable write operations ------------------------------------------ */
+	sCommand.InstructionMode   = QSPI_INSTRUCTION_1_LINE;
+	if (index == Register_1)
+		sCommand.Instruction       = 0x05;
+	else
+		sCommand.Instruction       = 0x35;
+
+	sCommand.DataMode = QSPI_DATA_1_LINE;
+	sCommand.NbData = 1;
+
+	if (HAL_QSPI_Command(&hqspi, &sCommand, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
+	{
+	  Error_Handler();
+	}
+
+	if (HAL_QSPI_Receive(&hqspi, value, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK) {
+	  Error_Handler();
+	}
+
+
+	return 0;
+}
+
+int W25QxxWriteStatus(uint16_t value)
+{
+	uint8_t sendTo[] = {value, value>>8};
+	QSPI_CommandTypeDef sCommand = {0};
+
+	/* Enable write operations ------------------------------------------ */
+	sCommand.InstructionMode   = QSPI_INSTRUCTION_1_LINE;
+	sCommand.Instruction       = 0x01;
+
+	sCommand.DataMode = QSPI_DATA_1_LINE;
+	sCommand.NbData = 2;
+
+	if (HAL_QSPI_Command(&hqspi, &sCommand, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
+	{
+	  Error_Handler();
+	}
+
+	if (HAL_QSPI_Transmit(&hqspi, sendTo, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK) {
+	  Error_Handler();
+	}
+
+	return 0;
+}
+
+int W25QXXWriteEnable()
+{
+	QSPI_CommandTypeDef sCommand = {0};
+
+	/* Enable write operations ------------------------------------------ */
+	sCommand.InstructionMode   = QSPI_INSTRUCTION_1_LINE;
+	sCommand.Instruction       = 0x06;
+
+	sCommand.AddressMode = QSPI_ADDRESS_NONE;
+	sCommand.AddressSize = QSPI_ADDRESS_NONE;
+	sCommand.Address = 0x0U;
+
+	sCommand.AlternateByteMode = QSPI_ALTERNATE_BYTES_NONE;
+	sCommand.AlternateBytes = QSPI_ALTERNATE_BYTES_NONE;
+	sCommand.AlternateBytesSize = QSPI_ALTERNATE_BYTES_NONE;
+
+	sCommand.DummyCycles = 0;
+	sCommand.DataMode = QSPI_DATA_NONE;
+	sCommand.NbData = 0;
+
+	sCommand.DdrMode = QSPI_DDR_MODE_DISABLE;
+	sCommand.SIOOMode = QSPI_SIOO_INST_EVERY_CMD;
+
+	if (HAL_QSPI_Command(&hqspi, &sCommand, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
+	{
+	  Error_Handler();
+	}
+
+	return 0;
+}
+
+int W25QXXReadRaw()
+{
+	QSPI_CommandTypeDef     sCommand;
+
+	sCommand.InstructionMode   = QSPI_INSTRUCTION_1_LINE;
+	sCommand.Instruction       = 0x6B;
+
+	sCommand.AddressMode = QSPI_ADDRESS_1_LINE;
+	sCommand.AddressSize = QSPI_ADDRESS_24_BITS;
+	/* A special address 0x123456%256=86 */
+	sCommand.Address = 0x123456U;
+
+	sCommand.AlternateByteMode = QSPI_ALTERNATE_BYTES_NONE;
+	sCommand.AlternateBytes = QSPI_ALTERNATE_BYTES_NONE;
+	sCommand.AlternateBytesSize = QSPI_ALTERNATE_BYTES_NONE;
+
+	sCommand.DummyCycles = 8;
+	sCommand.DataMode = QSPI_DATA_4_LINES;
+	sCommand.NbData = 4;
+
+	sCommand.DdrMode           = QSPI_DDR_MODE_DISABLE;
+	sCommand.SIOOMode          = QSPI_SIOO_INST_EVERY_CMD;
+
+	if (HAL_QSPI_Command(&hqspi, &sCommand, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
+	{
+	  Error_Handler();
+	}
+
+	if (HAL_QSPI_Receive(&hqspi, buf, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK) {
+	  Error_Handler();
+	}
+
+	return 0;
+}
+
+int W25QXXWriteRaw()
+{
+	uint8_t wrireBuff[] = {0x11, 0x22, 0x33, 0x44};
+	QSPI_CommandTypeDef     sCommand;
+
+	sCommand.InstructionMode   = QSPI_INSTRUCTION_1_LINE;
+	sCommand.Instruction       = 0x02;
+
+	sCommand.AddressMode = QSPI_ADDRESS_1_LINE;
+	sCommand.AddressSize = QSPI_ADDRESS_24_BITS;
+	/* A special address 0x123456%256=86 */
+	sCommand.Address = 0x123456U;
+
+	sCommand.AlternateByteMode = QSPI_ALTERNATE_BYTES_NONE;
+	sCommand.AlternateBytes = QSPI_ALTERNATE_BYTES_NONE;
+	sCommand.AlternateBytesSize = QSPI_ALTERNATE_BYTES_NONE;
+
+	sCommand.DummyCycles = 0;
+	sCommand.DataMode = QSPI_DATA_1_LINE;
+	sCommand.NbData = 4;
+
+	sCommand.DdrMode           = QSPI_DDR_MODE_DISABLE;
+	sCommand.SIOOMode          = QSPI_SIOO_INST_EVERY_CMD;
+
+	if (HAL_QSPI_Command(&hqspi, &sCommand, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
+	{
+	  Error_Handler();
+	}
+
+	if (HAL_QSPI_Transmit(&hqspi, wrireBuff, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK) {
+	  Error_Handler();
+	}
+
+	return 0;
 }
 /* USER CODE END 0 */
 
@@ -95,6 +292,16 @@ int main(void)
   MX_GPIO_Init();
   MX_QUADSPI_Init();
   /* USER CODE BEGIN 2 */
+  //W25QxxReadFlashID();
+  W25QXXWriteEnable();
+  W25QxxReadStatus(Register_1, &buf[0]);
+  W25QxxReadStatus(Register_2, &buf[1]);
+
+  uint16_t status = ((buf[1] | (1<<1)) <<8) | buf[0];
+  W25QxxWriteStatus(status);
+  W25QxxReadStatus(Register_2, &buf[1]);
+
+  W25QxxReadStatus(Register_1, &buf[0]);
 
   /* USER CODE END 2 */
 
@@ -102,6 +309,14 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	W25QXXReadRaw();
+
+	W25QXXWriteEnable();
+	W25QXXWriteRaw();
+
+	HAL_Delay(10);
+	W25QXXReadRaw();
+
 	HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin, GPIO_PIN_RESET);
@@ -245,10 +460,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_5, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, LED_GREEN_Pin|LED_RED_Pin|LED_BLUE_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PB0 PB1 PB5 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_5;
+  /*Configure GPIO pins : LED_GREEN_Pin LED_RED_Pin LED_BLUE_Pin */
+  GPIO_InitStruct.Pin = LED_GREEN_Pin|LED_RED_Pin|LED_BLUE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;

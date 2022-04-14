@@ -1,10 +1,14 @@
 # Quad SPI
 
+> 希望能通过这个基于强大功能和丰富的生态的MCU进而任意和Flash交互
+>
 > This project is based on STM32WB55 Nucleo Pack.
 >
 > Flash:W25Q64 WinBond
 
 ##### Import Structure
+
+###### QSPI_CommandTypeDef
 
 ```c
 typedef struct
@@ -55,7 +59,7 @@ typedef struct
 #define QSPI_SIOO_INST_ONLY_FIRST_CMD  ((uint32_t)QUADSPI_CCR_SIOO) /*!<Send instruction only for the first command*/
 ```
 
-
+###### QSPI_AutoPollingTypeDef
 
 ```c
 typedef struct
@@ -72,7 +76,7 @@ typedef struct
                                   This parameter can be a value of @ref QSPI_MatchMode */
   uint32_t AutomaticStop;      /* Specifies if automatic polling is stopped after a match.
                                   This parameter can be a value of @ref QSPI_AutomaticStop */
-}QSPI_AutoPollingTypeDef;
+} QSPI_AutoPollingTypeDef;
 ```
 
 ##### Order
@@ -172,6 +176,183 @@ static void QSPI_Config(QSPI_HandleTypeDef *hqspi, QSPI_CommandTypeDef *cmd, uin
       }
     }
   }
+}
+```
+
+###### PIN Description
+
+| CONN（第几组排针） | PIN  | MEAN | GPIO | COLOR（杜邦线的颜色） |
+| ------------------ | ---- | ---- | ---- | --------------------- |
+| CN7                | 16   | 3.3V | NULL | 红                    |
+| CN7                | 20   | GND  | NULL | 棕                    |
+| CN10               | 35   | CS   | PA2  | 绿                    |
+| CN10               | 37   | CLK  | PA3  | 白                    |
+| CN10               | 5    | IO0  | PB9  | 紫                    |
+| CN10               | 3    | IO1  | PB8  | 灰                    |
+| CN10               | 15   | IO2  | PA7  | 蓝                    |
+| CN10               | 13   | IO3  | PA6  | 橙                    |
+
+### 测试步骤
+
+#### 第一步：读取设备ID
+
+首先我们应该确定一下我们的接线是否准确无误，查看数据手册获取如何读取：
+
+![image-20220413100611425](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220413100611425.png)
+
+我们可以非常清楚的看到设备上电后默认是SPI总线(accessed through an SPI compatiable)，此时HOLD(IO2)和WP(IO3)上暂时无法传输数据，如果启用引脚上拉，此时应该是低电平，我们尝试读取一下：
+
+![image-20220413101003646](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220413101003646.png)
+
+分析一下代码：
+
+```c
+/* 整体看下来，把数据封装在 QSPI_CommandTypeDef 就可以完成整个读写过程 */
+QSPI_CommandTypeDef     sCommand;
+/* Standard SPI:1 Dual SPI:2 Quad SPI:4 */
+sCommand.InstructionMode   = QSPI_INSTRUCTION_1_LINE;
+/* 发出的命令 */
+sCommand.Instruction       = 0x90;
+/* 24位地址正好是3个没用的波形 */
+sCommand.AddressMode = QSPI_ADDRESS_1_LINE;
+sCommand.AddressSize = QSPI_ADDRESS_24_BITS;
+sCommand.Address = 0x0U;
+/* 这个暂时不知道是什么意思 */
+sCommand.AlternateByteMode = QSPI_ALTERNATE_BYTES_NONE;
+sCommand.AlternateBytes = QSPI_ALTERNATE_BYTES_NONE;
+sCommand.AlternateBytesSize = QSPI_ALTERNATE_BYTES_NONE;
+/* DummyCycles为零，实际上dummy有3个字节的地址代替了，数据手册上让这么做的，dummy 波形多产生在准备读之前 */
+/* The dummy clocks allow the devices internal circuits additional time for setting up the initial address. During the dummy clocks the data value on the DO pin is a “don’t care”. */
+sCommand.DummyCycles = 0;
+/* 标准SPI MISO接收数据，设置接收的数据长度为2，也就是发送完地址以后，在产生16个时钟信号(接收数据)接收从机数据 */
+sCommand.DataMode = QSPI_DATA_1_LINE;
+sCommand.NbData = 2;
+/* Double Date Rate, 不采用上升沿、下降沿双倍速率采样 */
+sCommand.DdrMode           = QSPI_DDR_MODE_DISABLE;
+/* 
+每次交互都要重新发送命令
+因为在连续读的时候，SOC可以每次发送地址而忽略（不发）命令
+*/
+sCommand.SIOOMode          = QSPI_SIOO_INST_EVERY_CMD;
+
+if (HAL_QSPI_Command(&hqspi, &sCommand, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
+{
+    Error_Handler();
+}
+
+if (HAL_QSPI_Receive(&hqspi, buf, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK) {
+    Error_Handler();
+}
+```
+
+##### 波形
+
+- 这里记录一下波形，当我们读不出来的时候记录一下
+
+手册上的波形
+
+![image-20220414095948343](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220414095948343.png)
+
+由于现在是标准SPI模式，IO2和IO3是没有数据交互的，所以我们可以使用SPI解析
+
+![image-20220414101907407](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220414101907407.png)
+
+![image-20220414102930640](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220414102930640.png)
+
+#### 第二步：切换到QuadSPI模式
+
+ Quad SPI and QPI instructions require the non-volatile Quad Enable bit (**QE**) in Status Register-2 
+
+to be set. 
+
+![image-20220414104803868](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220414104803868.png)
+
+所以使用Quad SPI提高传输速度仅需要两步：
+
+1. 使能QE位
+2. 使用支持Quad SPI特征的指令
+
+##### QE Bit Enable
+
+非易失性存储写（掉电数据不丢，甚至状态寄存器也是这样，我们在MCU上的寄存器是一段特殊的内存，掉电后都是需要初始化的）之前必须要先发送写使能指令。
+
+> The Write Status Register instruction allows the Status Register to be written. Only non-volatile Status Register bits SRP0, SEC, TB, BP2, BP1, BP0 (bits 7 thru 2 of Status Register-1) and CMP, LB3, LB2, LB1, **QE**, SRP1 (bits 14 thru 8 of Status Register-2) can be written to. To write non-volatile Status Register bits, a standard Write Enable (06h) instruction must previously have been executed for the device to accept the Write Status Register instruction (Status Register bit WEL must equal 1). 
+
+![image-20220414134654959](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220414134654959.png)
+
+![image-20220414140817507](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220414140817507.png)
+
+```c
+int W25QXXWriteEnable()
+{
+	QSPI_CommandTypeDef sCommand = {0};
+
+	/* Enable write operations ------------------------------------------ */
+	sCommand.InstructionMode   = QSPI_INSTRUCTION_1_LINE;
+	sCommand.Instruction       = 0x06;
+
+	sCommand.AddressMode = QSPI_ADDRESS_NONE;
+	sCommand.AddressSize = QSPI_ADDRESS_NONE;
+	sCommand.Address = 0x0U;
+
+	sCommand.AlternateByteMode = QSPI_ALTERNATE_BYTES_NONE;
+	sCommand.AlternateBytes = QSPI_ALTERNATE_BYTES_NONE;
+	sCommand.AlternateBytesSize = QSPI_ALTERNATE_BYTES_NONE;
+	/* 注意这里一定要设置DataMode为0 */
+	sCommand.DummyCycles = 0;
+	sCommand.DataMode = QSPI_DATA_NONE;
+	sCommand.NbData = 0;
+
+	sCommand.DdrMode = QSPI_DDR_MODE_DISABLE;
+	sCommand.SIOOMode = QSPI_SIOO_INST_EVERY_CMD;
+
+	if (HAL_QSPI_Command(&hqspi, &sCommand, HAL_QSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
+	{
+	  Error_Handler();
+	}
+
+	return 0;
+}
+```
+
+现在终于可以置为 **QE Bit Enable** 了
+
+![image-20220414141443634](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220414141443634.png)
+
+顺便记录一下示波器的
+
+![image-20220414141746348](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220414141746348.png)
+
+Quad SPI Read
+
+**Mode:Fast Read Quad Output**
+
+到目前位置前边的都是铺垫，现在终于可以看看Quad SPI传输了
+
+![image-20220414150710148](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220414150710148.png)
+
+##### Write And Read
+
+上边的读不太严谨，但是也没有明显的读错误，接下来我们试试随机数读写。
+
+![image-20220414151057356](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220414151057356.png)
+
+这个接口真的是为了读而设计的，写的话还得老老实实的用标准SPI.
+
+![image-20220414154455103](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220414154455103.png)
+
+看一下完整的波形
+
+![image-20220414154650573](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220414154650573.png)
+
+![image-20220414155252801](C:\Users\34776\AppData\Roaming\Typora\typora-user-images\image-20220414155252801.png)
+
+##### Erase 、Write And Read
+
+```c
+while(1)
+{
+    ...
 }
 ```
 
